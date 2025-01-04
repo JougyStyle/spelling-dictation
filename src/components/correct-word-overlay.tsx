@@ -1,6 +1,10 @@
 import { motion } from 'framer-motion';
 
-const CorrectWordOverlay = ({ word }) => (
+type CorrectWordOverlayProps = {
+  word: string;
+};
+
+const CorrectWordOverlay = ({ word }: CorrectWordOverlayProps) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.5, y: 20 }}
     animate={{ opacity: 1, scale: 1, y: 0 }}
