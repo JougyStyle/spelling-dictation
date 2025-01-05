@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Volume2, Check, Eye, ArrowLeft, ArrowRight, Play } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import CorrectWordOverlay from './correct-word-overlay';
 import Confetti from './confetti';
 
@@ -13,11 +12,6 @@ interface WordResult {
   word: string;
   correct: boolean;
   attempts: string[];
-}
-
-interface WordStatus {
-  revealed: boolean;
-  firstTry: boolean;
 }
 
 interface PracticeResult {
@@ -36,7 +30,6 @@ interface PracticeViewProps {
     words: string[];
   };
   onReturn: () => void;
-  onShowStats: () => void;
   onSaveResult: (result: PracticeResult) => void;
   practiceHistory: PracticeResult[];
 }
@@ -44,7 +37,6 @@ interface PracticeViewProps {
 const PracticeView: React.FC<PracticeViewProps> =({ 
   list, 
   onReturn, 
-  onShowStats,
   onSaveResult,
   practiceHistory 
 })  => {
@@ -67,7 +59,6 @@ const PracticeView: React.FC<PracticeViewProps> =({
     }))
   );
 
-  const [showResults, setShowResults] = useState(false);
   const animationDuration: number = 4000;
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const listHistory = practiceHistory
@@ -99,7 +90,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
         setHistoryIndex(historyIndex + 1);
       }
     } else if (direction === 'next') {
-      if (historyIndex > 0) {
+      if (historyIndex !== null && historyIndex > 0) {
         setHistoryIndex(historyIndex - 1);
       } else if (historyIndex === 0) {
         setHistoryIndex(null);
@@ -123,36 +114,6 @@ const PracticeView: React.FC<PracticeViewProps> =({
     if (historyIndex === null) return "Choisir une session";
     return formatDateTime(listHistory[historyIndex].date);
   };
-
-  const getCurrentPracticeDate = () => {
-    if (historyIndex === -1) return "Pratique actuelle";
-    return listHistory[historyIndex].date;
-  };
-
-  // Ajouter ceci juste avant le return dans le composant principal
-  const renderHistoryNavigation = () => (
-    <div className="flex items-center justify-between mb-4">
-      <Button
-        variant="outline"
-        onClick={() => navigateHistory('prev')}
-        disabled={historyIndex >= listHistory.length - 1}
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Précédent
-      </Button>
-      
-      <span className="font-medium">{getCurrentPracticeDate()}</span>
-      
-      <Button
-        variant="outline"
-        onClick={() => navigateHistory('next')}
-        disabled={historyIndex === -1}
-      >
-        Suivant
-        <ArrowRight className="ml-2 h-4 w-4" />
-      </Button>
-    </div>
-  );
 
   useEffect(() => {
     localStorage.setItem('practiceHistory', JSON.stringify(practiceHistory));
@@ -192,14 +153,27 @@ const PracticeView: React.FC<PracticeViewProps> =({
     const correctFirstTry = wordStatuses.filter(status => status.firstTry).length;
     const score = Math.round((correctFirstTry / list.words.length) * 100);
     
+    const wordResults = list.words.map((word, index) => ({
+      word,
+      correct: wordStatuses[index].firstTry,
+      attempts: wordStatuses[index].attempts
+    }));
+  
+    const totalAttempts = wordStatuses.reduce(
+      (sum, status) => sum + status.attempts.length, 
+      0
+    );
+  
     const result: PracticeResult = {
-      date: new Date().toLocaleDateString('fr-FR'),
+      date: new Date().toISOString(),
       score,
       listId: list.id,
-      listName: list.name
+      listName: list.name,
+      wordResults,
+      totalAttempts
     };
-
-    setPracticeHistory(prev => [...prev, result]);
+  
+    onSaveResult(result);
     return score;
   };
 
@@ -222,7 +196,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
     const newStatuses = [...wordStatuses];
     newStatuses[currentWordIndex].attempts.push(userInput.trim());
     
-    const isLastWord = currentWordIndex === list.words.length - 1;
+        const isLastWord = currentWordIndex === list.words.length - 1;
 
     if (correct) {
       newStatuses[currentWordIndex].revealed = true;
@@ -240,7 +214,6 @@ const PracticeView: React.FC<PracticeViewProps> =({
         playSound('success');
         if (isLastWord) {
           saveScore();
-          setShowResults(true);
         }
       }
       
@@ -285,7 +258,6 @@ const PracticeView: React.FC<PracticeViewProps> =({
       };
       console.log("isLastWord", result);
       onSaveResult(result);
-      setShowResults(true);
     }
   };
 

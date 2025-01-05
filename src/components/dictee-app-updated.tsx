@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Book, Plus, Edit, Save, X, ArrowLeft, Trash, ArrowRight, ArrowRightCircle } from 'lucide-react';
+import { Book, Plus, Edit, Save, X, ArrowLeft, Trash, ArrowRightCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import PracticeView from './practice-view';
 import StatsView from './stats-view';
@@ -223,8 +223,7 @@ const DicteeApp = () => {
   }, [wordLists]);
 
   const savePracticeResult = (result: PracticeResult) => {
-    let res = setPracticeHistory(prev => [...prev, result]);
-    console.log('savePracticeResult', res)
+    setPracticeHistory(prev => [...prev, result]);
   };
 
   const getLastScore = (listId: number) => {
@@ -280,6 +279,36 @@ const DicteeApp = () => {
       .map(([word]) => word);
   };
 
+  // Fonction pour obtenir les mots difficiles à partir de l'historique
+  const getSuggestedWords = () => {
+    if (!practiceHistory || practiceHistory.length === 0) return [];
+
+    // Récupérer tous les résultats de pratique
+    const allWordResults = practiceHistory.flatMap(result => result.wordResults || []);
+
+    // Compter les échecs pour chaque mot
+    const wordFailures = allWordResults.reduce((acc, result) => {
+      if (result && !result.correct) {
+        acc[result.word] = (acc[result.word] || 0) + 1;
+      }
+      return acc;
+    }, {} as { [word: string]: number });
+
+    // Filtrer les mots qui sont déjà dans la liste en cours d'édition
+    const currentWords = editedWords.split('\n').map(w => w.trim());
+    
+    // Retourner les mots avec au moins 2 échecs, qui ne sont pas déjà dans la liste
+    return Object.entries(wordFailures)
+      .filter(([word, failures]) => failures >= 2 && !currentWords.includes(word))
+      .map(([word]) => word);
+  };
+
+  // Fonction pour ajouter un mot suggéré à la liste
+  const addSuggestedWord = (word: string) => {
+    const currentWords = editedWords.trim();
+    setEditedWords(currentWords ? `${currentWords}\n${word}` : word);
+  };
+
   const addDifficultWordToList = (listId: number, word: string) => {
     setWordLists(lists =>
       lists.map(list =>
@@ -300,7 +329,7 @@ const DicteeApp = () => {
 
     return (
       <div className="mt-2">
-        <p className="text-sm font-medium mb-1">Mots difficiles suggérés :</p>
+        <p className="text-sm font-medium mb-1">Mots difficiles de la dictée :</p>
         <div className="flex flex-wrap gap-1">
           {difficultWords.map(word => (
             <Badge
@@ -315,12 +344,6 @@ const DicteeApp = () => {
         </div>
       </div>
     );
-  };
-
-  const getBestScore = (listId: number) => {
-    const listScores = practiceHistory
-      .filter(result => result.listId === listId);
-    return Math.max(...listScores.map(result => result.score), 0);
   };
 
   const startPractice = (list: WordList) => {
@@ -398,12 +421,36 @@ const DicteeApp = () => {
           onChange={e => setEditedName(e.target.value)}
         />
       </div>
+      
       <textarea
         className="w-full min-h-[300px] p-2 border rounded"
         placeholder="Entrez les mots (un par ligne)"
         value={editedWords}
         onChange={e => setEditedWords(e.target.value)}
       />
+
+      {/* Section des mots suggérés */}
+      {practiceHistory.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-600">
+            Mots souvent mal orthographiés :
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {getSuggestedWords().map((word) => (
+              <Badge
+                key={word}
+                variant="outline"
+                className="cursor-pointer hover:bg-slate-100 flex items-center gap-1"
+                onClick={() => addSuggestedWord(word)}
+              >
+                {word}
+                <Plus className="h-3 w-3 ml-1" />
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
@@ -480,7 +527,6 @@ const DicteeApp = () => {
         {view === 'practice' && selectedList && (
           <PracticeView
             list={selectedList}
-            onShowStats={() => setView('stats')}
             onReturn={() => {
               setView('menu');
               setSelectedList(null);
