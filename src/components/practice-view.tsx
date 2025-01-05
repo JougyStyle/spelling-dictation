@@ -2,11 +2,18 @@ import { useState, useEffect  } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertTitle } from '@/components/ui/alert';
-import { Volume2, Check, Eye, ArrowLeft } from 'lucide-react';
+import { Volume2, Check, Eye, ArrowLeft, ArrowRight, Play } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import CorrectWordOverlay from './correct-word-overlay';
 import Confetti from './confetti';
+
+
+interface WordResult {
+  word: string;
+  correct: boolean;
+  attempts: string[];
+}
 
 interface WordStatus {
   revealed: boolean;
@@ -18,6 +25,8 @@ interface PracticeResult {
   score: number;
   listId: number;
   listName: string;
+  wordResults: WordResult[];
+  totalAttempts: number;
 }
 
 interface PracticeViewProps {
@@ -27,25 +36,123 @@ interface PracticeViewProps {
     words: string[];
   };
   onReturn: () => void;
-  onShowStats: () => void;  // Add this prop to the interface
+  onShowStats: () => void;
+  onSaveResult: (result: PracticeResult) => void;
+  practiceHistory: PracticeResult[];
 }
 
-const PracticeView: React.FC<PracticeViewProps> = ({ list, onReturn, onShowStats }) => {
+const PracticeView: React.FC<PracticeViewProps> =({ 
+  list, 
+  onReturn, 
+  onShowStats,
+  onSaveResult,
+  practiceHistory 
+})  => {
+  const [isActiveSession, setIsActiveSession] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
   const [userInput, setUserInput] = useState<string>('');
   const [feedback, setFeedback] = useState('');
   const [isCorrect, setIsCorrect] = useState<boolean|null>(null);
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [correctWordDisplay, setCorrectWordDisplay] = useState<string | null>(null);
-  const [wordStatuses, setWordStatuses] = useState<WordStatus[]>(
-    list.words.map(() => ({ revealed: false, firstTry: true }))
+  const [wordStatuses, setWordStatuses] = useState<{
+    revealed: boolean;
+    firstTry: boolean;
+    attempts: string[];
+  }[]>(
+    list.words.map(() => ({ 
+      revealed: false, 
+      firstTry: true,
+      attempts: []
+    }))
   );
-  const [practiceHistory, setPracticeHistory] = useState<PracticeResult[]>(() => {
-    const saved = localStorage.getItem('practiceHistory');
-    return saved ? JSON.parse(saved) : [];
-  });
+
   const [showResults, setShowResults] = useState(false);
   const animationDuration: number = 4000;
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const listHistory = practiceHistory
+    .filter(result => result.listId === list.id)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+
+    const startNewSession = () => {
+      setIsActiveSession(true);
+      setHistoryIndex(null);
+      setCurrentWordIndex(0);
+      setUserInput('');
+      setFeedback('');
+      setIsCorrect(null);
+      setWordStatuses(list.words.map(() => ({
+        revealed: false,
+        firstTry: true,
+        attempts: []
+      })));
+    };
+
+  const navigateHistory = (direction: 'prev' | 'next') => {
+    if (!listHistory.length) return;
+    
+    if (direction === 'prev') {
+      if (historyIndex === null) {
+        setHistoryIndex(0);
+      } else if (historyIndex < listHistory.length - 1) {
+        setHistoryIndex(historyIndex + 1);
+      }
+    } else if (direction === 'next') {
+      if (historyIndex > 0) {
+        setHistoryIndex(historyIndex - 1);
+      } else if (historyIndex === 0) {
+        setHistoryIndex(null);
+      }
+    }
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString('fr-FR', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getCurrentPracticeInfo = () => {
+    if (isActiveSession) return "Session en cours";
+    if (historyIndex === null) return "Choisir une session";
+    return formatDateTime(listHistory[historyIndex].date);
+  };
+
+  const getCurrentPracticeDate = () => {
+    if (historyIndex === -1) return "Pratique actuelle";
+    return listHistory[historyIndex].date;
+  };
+
+  // Ajouter ceci juste avant le return dans le composant principal
+  const renderHistoryNavigation = () => (
+    <div className="flex items-center justify-between mb-4">
+      <Button
+        variant="outline"
+        onClick={() => navigateHistory('prev')}
+        disabled={historyIndex >= listHistory.length - 1}
+      >
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Précédent
+      </Button>
+      
+      <span className="font-medium">{getCurrentPracticeDate()}</span>
+      
+      <Button
+        variant="outline"
+        onClick={() => navigateHistory('next')}
+        disabled={historyIndex === -1}
+      >
+        Suivant
+        <ArrowRight className="ml-2 h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   useEffect(() => {
     localStorage.setItem('practiceHistory', JSON.stringify(practiceHistory));
@@ -109,34 +216,22 @@ const PracticeView: React.FC<PracticeViewProps> = ({ list, onReturn, onShowStats
 
   const handleSubmit = () => {
     const currentWord = list.words[currentWordIndex];
-    const correct: boolean = userInput.toLowerCase().trim() === currentWord.toLowerCase();
+    const correct = userInput.toLowerCase().trim() === currentWord.toLowerCase();
     setIsCorrect(correct);
+
+    const newStatuses = [...wordStatuses];
+    newStatuses[currentWordIndex].attempts.push(userInput.trim());
     
+    const isLastWord = currentWordIndex === list.words.length - 1;
+
     if (correct) {
-      const newStatuses = [...wordStatuses];
       newStatuses[currentWordIndex].revealed = true;
       setWordStatuses(newStatuses);
       setFeedback('Bravo ! C\'est la bonne orthographe !');
-      
-      const isLastWord = currentWordIndex === list.words.length - 1;
-      
       if (wordStatuses[currentWordIndex].firstTry) {
         setShowCelebration(true);
         playSound('perfect');
         setCorrectWordDisplay(list.words[currentWordIndex]);
-        
-        if (isLastWord) {
-          const score = saveScore();
-          if (wordStatuses.every(status => status.firstTry)) {
-            // Sans faute ! Célébration spéciale
-            setFeedback('🎉 Incroyable ! Un sans-faute ! 🎉');
-            setTimeout(() => {
-              setShowCelebration(false);
-              setShowResults(true);
-            }, animationDuration);
-          }
-        }
-        
         setTimeout(() => {
           setShowCelebration(false);
           setCorrectWordDisplay(null);
@@ -163,6 +258,35 @@ const PracticeView: React.FC<PracticeViewProps> = ({ list, onReturn, onShowStats
       setWordStatuses(newStatuses);
       setFeedback('Pas tout à fait... Essaie encore !');
     }
+
+    if (isLastWord) {
+      // Sauvegarde des résultats
+      const wordResults: WordResult[] = list.words.map((word, index) => ({
+        word,
+        correct: wordStatuses[index].firstTry,
+        attempts: wordStatuses[index].attempts
+      }));
+
+      const totalAttempts = wordStatuses.reduce(
+        (sum, status) => sum + status.attempts.length, 
+        0
+      );
+
+      const correctFirstTry = wordStatuses.filter(status => status.firstTry).length;
+      const score = Math.round((correctFirstTry / list.words.length) * 100);
+
+      const result: PracticeResult = {
+        date: new Date().toISOString(),
+        score,
+        listId: list.id,
+        listName: list.name,
+        wordResults,
+        totalAttempts
+      };
+      console.log("isLastWord", result);
+      onSaveResult(result);
+      setShowResults(true);
+    }
   };
 
   const nextWord = () => {
@@ -174,46 +298,53 @@ const PracticeView: React.FC<PracticeViewProps> = ({ list, onReturn, onShowStats
     }
   };
 
-  const renderResults = () => {
-    const listResults = practiceHistory
-      .filter(result => result.listId === list.id)
-      .slice(-10);
+  const renderWordList = () => {
+    if (historyIndex === null) {
+      if (!isActiveSession) {
+        // Affichage initial des mots masqués
+        return list.words.map((word, index) => (
+          <span
+            key={index}
+            className="px-2 py-1 rounded bg-gray-200"
+          >
+            {'•'.repeat(word.length)}
+          </span>
+        ));
+      }
+      // Session active - affichage normal avec les statuts
+      return list.words.map((word, index) => (
+        <span
+          key={index}
+          className={`px-2 py-1 rounded ${
+            wordStatuses[index].revealed
+              ? wordStatuses[index].firstTry
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+              : 'bg-gray-200'
+          }`}
+        >
+          {wordStatuses[index].revealed ? word : '•'.repeat(word.length)}
+        </span>
+      ));
+    }
 
-    return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-center">Ton progrès</h3>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={listResults}>
-              <XAxis dataKey="date" />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="score"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                dot={{ fill: '#3b82f6' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={onReturn}
-            className="flex-1"
-          >
-            Retour au menu
-          </Button>
-          <Button
-            onClick={onShowStats}
-            className="flex-1"
-          >
-            Voir les statistiques
-          </Button>
-        </div>
-      </div>
-    );
+    // Affichage d'une session historique
+    const historicalResults = listHistory[historyIndex].wordResults;
+    return list.words.map((word, index) => {
+      const result = historicalResults.find(r => r.word === word);
+      return (
+        <span
+          key={index}
+          className={`px-2 py-1 rounded ${
+            result?.correct
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }`}
+        >
+          {word}
+        </span>
+      );
+    });
   };
 
   return (
@@ -227,27 +358,66 @@ const PracticeView: React.FC<PracticeViewProps> = ({ list, onReturn, onShowStats
           />
         )}
       </AnimatePresence>
-      {showResults ? (
-        renderResults()
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-2 justify-center mb-4">
-            {list.words.map((word, index) => (
-              <span
-                key={index}
-                className={`px-2 py-1 rounded ${
-                  wordStatuses[index].revealed
-                    ? wordStatuses[index].firstTry
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
-                    : 'bg-gray-200'
-                }`}
-              >
-                {wordStatuses[index].revealed ? word : '•'.repeat(word.length)}
-              </span>
-            ))}
-          </div>
+      
+      {!isActiveSession && (
+        <div className="flex items-center justify-between mb-4">
+          <Button
+            variant="outline"
+            onClick={() => navigateHistory('prev')}
+            disabled={historyIndex === listHistory.length - 1}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Précédent
+          </Button>
+          
+          <span className="font-medium">{getCurrentPracticeInfo()}</span>
+          
+          <Button
+            variant="outline"
+            onClick={() => navigateHistory('next')}
+            disabled={historyIndex === null}
+          >
+            Suivant
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
+      <div className="flex flex-wrap gap-2 justify-center mb-4">
+        {renderWordList()}
+      </div>
+      
+
+      {historyIndex !== null && (
+        <div className="mt-4 space-y-2">
+          <h3 className="font-medium">Détails de la session :</h3>
+          <div className="text-sm">
+            <p>Score total : {listHistory[historyIndex].score}%</p>
+            <p>Nombre total d'essais : {listHistory[historyIndex].totalAttempts}</p>
+          </div>
+        </div>
+      )}
+
+      {!isActiveSession && (
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            onClick={onReturn}
+            className="flex-1"
+          >
+            <ArrowLeft className="mr-2" />
+            Menu
+          </Button>
+          <Button onClick={startNewSession} className="px-8">
+            <Play className="mr-2 h-4 w-4" />
+            {historyIndex === null ? 'Commencer la dictée' : 'Nouvelle session'}
+          </Button>
+        </div>
+      )}
+
+      {isActiveSession && (
+        <>
+          {/* Interface de pratique active */}
           <div className="flex justify-center gap-2">
             <Button onClick={() => speak(list.words[currentWordIndex])}>
               <Volume2 className="mr-2" />

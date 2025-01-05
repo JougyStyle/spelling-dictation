@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Book, Plus, Edit, Save, X, ArrowLeft, Trash } from 'lucide-react';
+import { Book, Plus, Edit, Save, X, ArrowLeft, Trash, ArrowRight, ArrowRightCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import PracticeView from './practice-view';
 import StatsView from './stats-view';
 
@@ -10,13 +11,22 @@ interface WordList {
   id: number;
   name: string;
   words: string[];
+  difficultWords?: string[];  // Mots difficiles pour l'enfant
+}
+
+interface WordResult {
+  word: string;
+  correct: boolean;
+  attempts: string[];  // Liste des essais de l'utilisateur
 }
 
 interface PracticeResult {
-  date: string;
+  date: string;  // ISO string
   score: number;
   listId: number;
   listName: string;
+  wordResults: WordResult[];
+  totalAttempts: number;  // Nombre total d'essais pour la session
 }
 
 const DicteeApp = () => {
@@ -198,15 +208,113 @@ const DicteeApp = () => {
   const [editedName, setEditedName] = useState('');
   const [editedWords, setEditedWords] = useState('');
 
-  const [practiceHistory] = useState<PracticeResult[]>(() => {
+  const [practiceHistory, setPracticeHistory] = useState<PracticeResult[]>(() => {
     const saved = localStorage.getItem('practiceHistory');
     return saved ? JSON.parse(saved) : [];
   });
 
+  useEffect(() => {
+    localStorage.setItem('practiceHistory', JSON.stringify(practiceHistory));
+  }, [practiceHistory]);
+
+  
+  useEffect(() => {
+    localStorage.setItem('dicteeWordLists', JSON.stringify(wordLists));
+  }, [wordLists]);
+
+  const savePracticeResult = (result: PracticeResult) => {
+    let res = setPracticeHistory(prev => [...prev, result]);
+    console.log('savePracticeResult', res)
+  };
+
   const getLastScore = (listId: number) => {
-    const listScores = practiceHistory
-      .filter(result => result.listId === listId);
-    return listScores[listScores.length - 1]?.score;
+    const listResults = practiceHistory
+      .filter(result => result.listId === listId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    return listResults[0]?.score;
+  };
+
+  const renderScoreDisplay = (list: WordList) => {
+    if (!list || !list.words) return null;
+    
+    const lastScore = getLastScore(list.id);
+    if (lastScore === undefined) {
+      return `(${list.words.length} mots)`;
+    }
+
+    const correctWords = Math.round((lastScore * list.words.length) / 100);
+    return (
+      <span className={getScoreColor(correctWords, list.words.length)}>
+        ({correctWords}/{list.words.length} mots)
+      </span>
+    );
+  };
+
+  const getScoreColor = (score: number, total: number) => {
+    const percentage = (score / total) * 100;
+    if (percentage === 100) return "text-green-600";
+    if (percentage >= 70) return "text-orange-500";
+    return "text-red-500";
+  };
+
+  // Analyse des mots difficiles basée sur l'historique complet
+  const getDifficultWords = (listId: number): string[] => {
+    if (!practiceHistory || practiceHistory.length === 0) return [];
+
+    const listResults = practiceHistory
+      .filter(result => result.listId === listId)
+      .flatMap(result => result.wordResults || []);
+
+    if (listResults.length === 0) return [];
+
+    const wordStats = listResults.reduce((acc, result) => {
+      if (result && !result.correct) {
+        acc[result.word] = (acc[result.word] || 0) + 1;
+      }
+      return acc;
+    }, {} as { [word: string]: number });
+
+    return Object.entries(wordStats)
+      .filter(([_, failures]) => failures >= 2)
+      .map(([word]) => word);
+  };
+
+  const addDifficultWordToList = (listId: number, word: string) => {
+    setWordLists(lists =>
+      lists.map(list =>
+        list.id === listId
+          ? {
+              ...list,
+              difficultWords: [...(list.difficultWords || []), word],
+              words: list.words.includes(word) ? list.words : [...list.words, word]
+            }
+          : list
+      )
+    );
+  };
+
+  const renderDifficultWordsSection = (listId: number) => {
+    const difficultWords = getDifficultWords(listId);
+    if (difficultWords.length === 0) return null;
+
+    return (
+      <div className="mt-2">
+        <p className="text-sm font-medium mb-1">Mots difficiles suggérés :</p>
+        <div className="flex flex-wrap gap-1">
+          {difficultWords.map(word => (
+            <Badge
+              key={word}
+              variant="outline"
+              className="cursor-pointer hover:bg-slate-100"
+              onClick={() => addDifficultWordToList(listId, word)}
+            >
+              {word} <ArrowRightCircle className="ml-1 h-3 w-3" />
+            </Badge>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const getBestScore = (listId: number) => {
@@ -214,10 +322,6 @@ const DicteeApp = () => {
       .filter(result => result.listId === listId);
     return Math.max(...listScores.map(result => result.score), 0);
   };
-
-  useEffect(() => {
-    localStorage.setItem('dicteeWordLists', JSON.stringify(wordLists));
-  }, [wordLists]);
 
   const startPractice = (list: WordList) => {
     setSelectedList(list);
@@ -342,29 +446,32 @@ const DicteeApp = () => {
               Nouvelle liste
             </Button>
             {wordLists.map(list => (
-              <div key={list.id} className="flex gap-2">
-                <Button
-                  onClick={() => startPractice(list)}
-                  className="flex-1 justify-start"
-                  variant="outline"
-                >
-                  <Book className="mr-2" />
-                  {list.name} ({list.words.length} mots)
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => startEdit(list)}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => deleteList(list.id)}
-                >
-                  <Trash className="h-4 w-4" />
-                </Button>
+              <div key={list.id} className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => startPractice(list)}
+                    className="flex-1 justify-start"
+                    variant="outline"
+                  >
+                    <Book className="mr-2" />
+                    {list.name} {renderScoreDisplay(list)}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => startEdit(list)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deleteList(list.id)}
+                  >
+                    <Trash className="h-4 w-4" />
+                  </Button>
+                </div>
+                {renderDifficultWordsSection(list.id)}
               </div>
             ))}
           </div>
@@ -378,6 +485,8 @@ const DicteeApp = () => {
               setView('menu');
               setSelectedList(null);
             }}
+            onSaveResult={savePracticeResult}
+            practiceHistory={practiceHistory}
           />
         )}
 

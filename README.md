@@ -91,6 +91,7 @@ Voici les scripts définis dans le fichier `package.json` et leur utilisation :
 - **Vite** : Outil de développement rapide pour les applications modernes.
 - **TailwindCSS** : Framework CSS pour le design.
 - **Framer Motion** : Animation des composants React.
+- **Shadcn UI** : Utilisaton des composants shadcn.ui (`https://ui.shadcn.com/docs/components/badge`)
 
 ## Contribution
 
