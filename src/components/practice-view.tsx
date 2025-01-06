@@ -40,6 +40,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
   onSaveResult,
   practiceHistory 
 })  => {
+  const animationDuration: number = 3000;
   const [isActiveSession, setIsActiveSession] = useState(false);
   const [currentWordIndex, setCurrentWordIndex] = useState<number>(0);
   const [userInput, setUserInput] = useState<string>('');
@@ -59,7 +60,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
     }))
   );
 
-  const animationDuration: number = 4000;
+  
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const listHistory = practiceHistory
     .filter(result => result.listId === list.id)
@@ -218,11 +219,11 @@ const PracticeView: React.FC<PracticeViewProps> =({
       }
       
       if (!isLastWord) {
+        setCurrentWordIndex(currentWordIndex + 1);
+        setUserInput('');
         setTimeout(() => {
-          setCurrentWordIndex(currentWordIndex + 1);
-          setUserInput('');
-          setFeedback('');
           setIsCorrect(null);
+          setFeedback('');
         }, animationDuration);
       }
     } else {
@@ -273,17 +274,17 @@ const PracticeView: React.FC<PracticeViewProps> =({
   const renderWordList = () => {
     if (historyIndex === null) {
       if (!isActiveSession) {
-        // Affichage initial des mots masqués
+        // Affichage initial des mots visibles
         return list.words.map((word, index) => (
           <span
             key={index}
-            className="px-2 py-1 rounded bg-gray-200"
+            className="px-2 py-1 rounded bg-blue-100 text-blue-800"
           >
-            {'•'.repeat(word.length)}
+            {word}
           </span>
         ));
       }
-      // Session active - affichage normal avec les statuts
+      // Session active - affichage avec les statuts
       return list.words.map((word, index) => (
         <span
           key={index}
@@ -321,7 +322,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
 
   return (
     <div className="space-y-4">
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {correctWordDisplay && <CorrectWordOverlay word={correctWordDisplay} />}
         {showCelebration && (
           <Confetti 
@@ -336,7 +337,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
           <Button
             variant="outline"
             onClick={() => navigateHistory('prev')}
-            disabled={historyIndex === listHistory.length - 1}
+            disabled={!listHistory.length || historyIndex === listHistory.length - 1}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Précédent
@@ -355,7 +356,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 justify-center mb-4">
+      <div className="flex flex-wrap gap-2 justify-center mb-4 relative mt-4">
         {renderWordList()}
       </div>
       
