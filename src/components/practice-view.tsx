@@ -6,6 +6,7 @@ import { Volume2, Check, Eye, ArrowLeft, ArrowRight, Play } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import CorrectWordOverlay from './correct-word-overlay';
 import Confetti from './confetti';
+import DicteeStateManager from './dictee-state-manager';
 
 
 interface WordResult {
@@ -68,6 +69,28 @@ const PracticeView: React.FC<PracticeViewProps> =({
 
 
     const startNewSession = () => {
+      // Vérifier s'il existe une sauvegarde pour cette liste
+      if (DicteeStateManager.hasSavedProgress(list.id)) {
+        const shouldResume = window.confirm(
+          'Une dictée en cours a été trouvée. Voulez-vous la reprendre ?'
+        );
+        
+        if (shouldResume) {
+          const savedProgress = DicteeStateManager.loadProgress();
+          if (savedProgress) {
+            setCurrentWordIndex(savedProgress.currentWordIndex);
+            setUserInput(savedProgress.userInput);
+            setWordStatuses(savedProgress.wordStatuses);
+            setIsActiveSession(true);
+            setHistoryIndex(null);
+            return;
+          }
+        }
+        // Si l'utilisateur ne veut pas reprendre ou s'il y a une erreur
+        DicteeStateManager.clearProgress();
+      }
+      
+      // Commencer une nouvelle session
       setIsActiveSession(true);
       setHistoryIndex(null);
       setCurrentWordIndex(0);
@@ -116,9 +139,26 @@ const PracticeView: React.FC<PracticeViewProps> =({
     return formatDateTime(listHistory[historyIndex].date);
   };
 
+  const onReturnWithCleanup = () => {
+    DicteeStateManager.clearProgress();
+    onReturn();
+  };
+
   useEffect(() => {
     localStorage.setItem('practiceHistory', JSON.stringify(practiceHistory));
   }, [practiceHistory]);
+
+  useEffect(() => {
+    if (isActiveSession) {
+      DicteeStateManager.saveProgress({
+        listId: list.id,
+        currentWordIndex,
+        userInput,
+        wordStatuses,
+        lastUpdated: new Date().toISOString()
+      });
+    }
+  }, [currentWordIndex, userInput, wordStatuses, isActiveSession, list.id]);
 
   const playSound = (type = 'success') => {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -375,7 +415,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
         <div className="flex justify-center">
           <Button
             variant="outline"
-            onClick={onReturn}
+            onClick={onReturnWithCleanup}
             className="flex-1"
           >
             <ArrowLeft className="mr-2" />
@@ -435,7 +475,7 @@ const PracticeView: React.FC<PracticeViewProps> =({
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={onReturn}
+              onClick={onReturnWithCleanup}
               className="flex-1"
             >
               <ArrowLeft className="mr-2" />
